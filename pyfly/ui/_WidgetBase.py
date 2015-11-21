@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding:  utf-8 -*-
 
-from pylogging import log
+from ..misc.pylogging import log
 
 class _WidgetBase(object):
     def __init__(self):

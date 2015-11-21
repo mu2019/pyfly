@@ -6,7 +6,7 @@ from tkinter import *
 from tkinter import font
 from tkinter import ttk
 from tkinter import messagebox
-from pylogging import log
+from pyfly.misc.pylogging import log
 
 
 #from tkevents import TkEventLoop
@@ -15,10 +15,10 @@ from pylogging import log
 import time
 import sys,re
 import multiprocessing as mp
-import inspector
+import pyfly.misc.inspector as inspector
 from PIL import Image, ImageTk
 
-from _WidgetBase import _WidgetBase
+from pyfly.ui._WidgetBase import _WidgetBase
 
 
 SEPARATOR = '~!@#$%^&*()+`{}[]:"|;\'\\<>?,./ \n\r\t'
@@ -32,34 +32,121 @@ class Editor(tk.Canvas,_WidgetBase):
     def __init__(self,parent,*args,**kwargs):
         super(Editor,self).__init__(parent, *args, **kwargs)
         #tk.Canvas.__init__(self,parent, *args, **kwargs)
-        self._Buffer = []
+        self._ItemBuffer = []
+        self._KeyPressBuffer = [()]
+        self._KeyReleaseBuffer = []
         #
         self._CursorLinePos = 0
         self._CursorCoordinat = [0,0]
         self._CursorCoordinatPixel = [0,0]
 
         self._DefaultFont = myFont=font.Font(family="msyh", size=14)
+        self._CharWidth,self._LineHeight = self._DefaultFont.measure(' '),self._DefaultFont.metrics("linespace")
+
+        print('char width,height',self._CharWidth,self._LineHeight)
 
         txt = self.create_text(0,0,text='', anchor=NW, font=myFont)
         self.focus(txt)
         self.icursor(txt, 0)
 
-        self.bind('<Key>',self.onKeyPress)
-        
+        self.bind('<Key>',self.onKey)
+        self.bind('<KeyPress>',self.onKeyPress)
+        self.bind('<KeyRelease>',self.onKeyRelease)
+
+    def onKeyRelease(self,evt):
+        '''
+        按键对应
+        英文状态
+            keypress和keyrelease的keysym是对应的
+            按下control键后char不对应
+            --key press--: char"  " keycode:" 17 " keysym:" Control_L "
+            --key press--: char"  " keycode:" 75 " keysym:" k "
+            **key release**: char"  " keycode:" 75 " keysym:" k "
+            --key press--: char"  " keycode:" 75 " keysym:" k "
+            **key release**: char"  " keycode:" 75 " keysym:" k "
+            **key release**: char"  " keycode:" 17 " keysym:" Control_L "            
+        输入法开启情况下
+            中文状态
+                **key release**: char" l " keycode:" 76 " keysym:" l "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                --key press--: char" 国 " keycode:" 0 " keysym:" ?? "
+                **key release**: char" 国 " keycode:" 0 " keysym:" ?? "
+                **key release**: char"   " keycode:" 32 " keysym:" space "
+                连续输入
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                --key press--: char" 际 " keycode:" 0 " keysym:" ?? "
+                **key release**: char" 际 " keycode:" 0 " keysym:" ?? "
+                --key press--: char" 法 " keycode:" 0 " keysym:" ?? "
+                **key release**: char" 法 " keycode:" 0 " keysym:" ?? "
+                **key release**: char"   " keycode:" 32 " keysym:" space "                
+           英文状态
+               --key press--: char"  " keycode:" 74 " keysym:" j "
+               --key press--: char" j " keycode:" 0 " keysym:" ?? "
+               **key release**: char" j " keycode:" 0 " keysym:" ?? "
+               **key release**: char" j " keycode:" 74 " keysym:" j "
+               CONTROL
+--key press--: char"  " keycode:" 17 " keysym:" Control_L "
+--key press--: char"  " keycode:" 229 " keysym:" ?? "
+**key release**: char"  " keycode:" 74 " keysym:" j "
+--key press--: char"  " keycode:" 76 " keysym:" l "
+--key press--: char"  " keycode:" 0 " keysym:" ?? "
+**key release**: char"  " keycode:" 0 " keysym:" ?? "
+**key release**: char"  " keycode:" 76 " keysym:" l "
+**key release**: char"  " keycode:" 17 " keysym:" Control_L "
+
+--key press--: char"  " keycode:" 17 " keysym:" Control_L "
+--key press--: char"  " keycode:" 76 " keysym:" l "
+--key press--: char"  " keycode:" 0 " keysym:" ?? "
+**key release**: char"  " keycode:" 0 " keysym:" ?? "
+**key release**: char"  " keycode:" 76 " keysym:" l "
+**key release**: char"  " keycode:" 17 " keysym:" Control_L "
+
+        '''
+        print('**key release**: char"',evt.char,'" keycode:"',evt.keycode,'" keysym:"',evt.keysym,'"')
+        keys = (evt.char,evt.keycode,evt.keysym)
+        if keys not in self._KeyPressBuffer:
+            pass
+        else:
+            self._KeyPressBuffer.remove(keys)
+        print(self._KeyPressBuffer)
+
     def onKeyPress(self,evt):
+        print('--key press--: char"',evt.char,'" keycode:"',evt.keycode,'" keysym:"',evt.keysym,'"')
+        keys = (evt.char,evt.keycode,evt.keysym)
+        if keys in self._KeyPressBuffer: # != keys and evt.keysym != '??' and evt.keycode != 229:
+            self._KeyPressBuffer.append(keys)
+        print(self._KeyPressBuffer)
+        
+        
+    def onKey(self,evt):
         #evt.char
-        print('--key--',evt.char,evt.keycode,evt.keysym)
+        print('--key--: char"',evt.char,'" keycode:"',evt.keycode,'" keysym:"',evt.keysym,'"')
+        #char = evt.char evt.keycode>0 
         if evt.keysym in ('BackSpace','Delete'):
             print('delete')
+        elif evt.char and ord(evt.char.upper()) != evt.keycode and evt.keycode:
+            print('control key')
+        elif evt.keysym == 'Return': #and evt.keycode in (10,13):
+            print('return',evt.keycode)
+            self._CursorLinePos +=1
+            self._CursorCoordinat[0] += 0
+            self._CursorCoordinat[1] += 1
+            self._CursorCoordinatPixel[0] = 0
+            self._CursorCoordinatPixel[1] += self._LineHeight
+            txt = self.create_text(self._CursorCoordinatPixel[0],self._CursorCoordinatPixel[1],text='\n', anchor=NW, font=self._DefaultFont)
+            self.focus(txt)
+            self.icursor(txt, 0)
+            self._ItemBuffer.append(txt)
         elif evt.char and self.isVisibleChar( evt.char):
             #width = self._DefaultFont.measure(evt.char)
             width,height = self._DefaultFont.measure(evt.char),self._DefaultFont.metrics("linespace")
+            print('__char width,height',width,height)
             t = self.create_text(self._CursorCoordinatPixel[0],self._CursorCoordinatPixel[1],text=evt.char,font=self._DefaultFont,anchor='nw')
             self._CursorCoordinatPixel[0] += width
             self._CursorCoordinat[0] += 1
             self._CursorLinePos += 1
             #print(self._CursorCoordinat[0])
-            self._Buffer.append(t)
+            self._ItemBuffer.append(t)
             #print('code',ord(evt.char),width)
             self.focus(t)
             self.icursor(t, 1)
