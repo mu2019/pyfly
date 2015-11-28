@@ -33,8 +33,11 @@ class Editor(tk.Canvas,_WidgetBase):
         super(Editor,self).__init__(parent, *args, **kwargs)
         #tk.Canvas.__init__(self,parent, *args, **kwargs)
         self._ItemBuffer = []
-        self._KeyPressBuffer = [()]
+        self._IMEState = 0
+        self._KeyPressBuffer = set() #[()]
+        self._KeyPressEvent = {}
         self._KeyReleaseBuffer = []
+        self._KeyReleaseEvent = {}
         #
         self._CursorLinePos = 0
         self._CursorCoordinat = [0,0]
@@ -50,10 +53,23 @@ class Editor(tk.Canvas,_WidgetBase):
         self.icursor(txt, 0)
 
         self.bind('<Key>',self.onKey)
-        self.bind('<KeyPress>',self.onKeyPress)
-        self.bind('<KeyRelease>',self.onKeyRelease)
+        self.bind('<KeyPress>',self._onKeyPress)
+        self.bind('<KeyRelease>',self._onKeyRelease)
+        '''
+        按键事件定义
+        {char:字符,IME:启用输入法,IMEStr:输入法输入字符串,downkeysym:已按下的按键名称,keycode:按键id,
 
-    def onKeyRelease(self,evt):
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char" k " keycode:" 75 " keysym:" k "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char" m " keycode:" 77 " keysym:" m "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                --key press--: char" 员 " keycode:" 0 " keysym:" ?? "
+                **key release**: char" 员 " keycode:" 0 " keysym:" ?? "
+                **key release**: char"   " keycode:" 32 " keysym:" space "              
+        '''
+
+    def _onKeyRelease(self,evt):
         '''
         按键对应
         英文状态
@@ -67,18 +83,95 @@ class Editor(tk.Canvas,_WidgetBase):
             **key release**: char"  " keycode:" 17 " keysym:" Control_L "            
         输入法开启情况下
             中文状态
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
                 **key release**: char" l " keycode:" 76 " keysym:" l "
                 --key press--: char"  " keycode:" 229 " keysym:" ?? "
                 --key press--: char" 国 " keycode:" 0 " keysym:" ?? "
                 **key release**: char" 国 " keycode:" 0 " keysym:" ?? "
                 **key release**: char"   " keycode:" 32 " keysym:" space "
+
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char" k " keycode:" 75 " keysym:" k "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char" m " keycode:" 77 " keysym:" m "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                --key press--: char" 员 " keycode:" 0 " keysym:" ?? "
+                **key release**: char" 员 " keycode:" 0 " keysym:" ?? "
+                **key release**: char"   " keycode:" 32 " keysym:" space "
+
+                输入过程中字母上屏
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char" a " keycode:" 65 " keysym:" a "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char" b " keycode:" 66 " keysym:" b "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char" c " keycode:" 67 " keysym:" c "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                --key press--: char" a " keycode:" 0 " keysym:" ?? "
+                **key release**: char" a " keycode:" 0 " keysym:" ?? "
+                --key press--: char" b " keycode:" 0 " keysym:" ?? "
+                **key release**: char" b " keycode:" 0 " keysym:" ?? "
+                --key press--: char" c " keycode:" 0 " keysym:" ?? "
+                **key release**: char" c " keycode:" 0 " keysym:" ?? "
+                 " keycode:" 13 " keysym:" Return "
+ 
+                输入过程中按ctrl
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char" l " keycode:" 76 " keysym:" l "
+                --key press--: char"  " keycode:" 17 " keysym:" Control_L "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char"  " keycode:" 77 " keysym:" m "
+                **key release**: char"  " keycode:" 17 " keysym:" Control_L "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                --key press--: char" 国 " keycode:" 0 " keysym:" ?? "
+                **key release**: char" 国 " keycode:" 0 " keysym:" ?? "
+                **key release**: char"   " keycode:" 32 " keysym:" space "
+
+                --key press--: char"  " keycode:" 17 " keysym:" Control_L "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char"  " keycode:" 77 " keysym:" m "
+                --key press--: char"  " keycode:" 76 " keysym:" l "
+                --key press--: char"  " keycode:" 0 " keysym:" ?? "
+                **key release**: char"  " keycode:" 0 " keysym:" ?? "
+                **key release**: char"  " keycode:" 76 " keysym:" l "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char"  " keycode:" 77 " keysym:" m "
+                **key release**: char"  " keycode:" 17 " keysym:" Control_L "
+                 
                 连续输入
                 --key press--: char"  " keycode:" 229 " keysym:" ?? "
                 --key press--: char" 际 " keycode:" 0 " keysym:" ?? "
                 **key release**: char" 际 " keycode:" 0 " keysym:" ?? "
                 --key press--: char" 法 " keycode:" 0 " keysym:" ?? "
                 **key release**: char" 法 " keycode:" 0 " keysym:" ?? "
-                **key release**: char"   " keycode:" 32 " keysym:" space "                
+                **key release**: char"   " keycode:" 32 " keysym:" space "
+
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char" v " keycode:" 86 " keysym:" v "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char" b " keycode:" 66 " keysym:" b "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                --key press--: char" 好 " keycode:" 0 " keysym:" ?? "
+                **key release**: char" 好 " keycode:" 0 " keysym:" ?? "
+                **key release**: char"   " keycode:" 32 " keysym:" space "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char" w " keycode:" 87 " keysym:" w "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char" a " keycode:" 65 " keysym:" a "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                **key release**: char" d " keycode:" 68 " keysym:" d "
+                --key press--: char"  " keycode:" 229 " keysym:" ?? "
+                --key press--: char" 代 " keycode:" 0 " keysym:" ?? "
+                **key release**: char" 代 " keycode:" 0 " keysym:" ?? "
+                --key press--: char" 码 " keycode:" 0 " keysym:" ?? "
+                **key release**: char" 码 " keycode:" 0 " keysym:" ?? "
+                **key release**: char" c " keycode:" 67 " keysym:" c "
+                
+                輸入數字
+                --key press--: char"  " keycode:" 51 " keysym:" 3 "
+                --key press--: char" 3 " keycode:" 0 " keysym:" ?? "
+                **key release**: char" 3 " keycode:" 0 " keysym:" ?? "
+                **key release**: char" 3 " keycode:" 51 " keysym:" 3 "
            英文状态
                --key press--: char"  " keycode:" 74 " keysym:" j "
                --key press--: char" j " keycode:" 0 " keysym:" ?? "
@@ -101,22 +194,80 @@ class Editor(tk.Canvas,_WidgetBase):
 **key release**: char"  " keycode:" 76 " keysym:" l "
 **key release**: char"  " keycode:" 17 " keysym:" Control_L "
 
+        進入虛擬輸入狀態
+        --key press--: char"  " keycode:" 229 " keysym:" ?? "
+        退出虛擬輸入狀態
+        **key release**: char"  " keycode:" 76 " keysym:" l "
+        keycode == ord(keysym)
         '''
         print('**key release**: char"',evt.char,'" keycode:"',evt.keycode,'" keysym:"',evt.keysym,'"')
-        keys = (evt.char,evt.keycode,evt.keysym)
-        if keys not in self._KeyPressBuffer:
-            pass
-        else:
-            self._KeyPressBuffer.remove(keys)
-        print(self._KeyPressBuffer)
-
-    def onKeyPress(self,evt):
-        print('--key press--: char"',evt.char,'" keycode:"',evt.keycode,'" keysym:"',evt.keysym,'"')
-        keys = (evt.char,evt.keycode,evt.keysym)
-        if keys in self._KeyPressBuffer: # != keys and evt.keysym != '??' and evt.keycode != 229:
-            self._KeyPressBuffer.append(keys)
-        print(self._KeyPressBuffer)
         
+        #,IME输入按键,IMEState=2
+        #IMEState ==1 時,KeyRelease事件,正常事件值
+        if self._IMEState == 1:
+            if evt.keycode == 0:
+                self._IMEState = 3
+            else:
+                self._IMEState = 2
+            self._KeyPressBuffer.remove('??')
+        elif self._IMEState in (2,3):
+            pass
+            
+        kevt = self._KeyPressEvent
+        
+        kevt = {'char':char,
+                'IME':self._IMEState,
+                'keycode':evt.keycode,
+                'keysym':evt.keysym,
+                'downkeysym':' %s ' % ' '.join(list(self._KeyPressBuffer))
+                }
+
+    def _onKeyPress(self,evt):
+        print('--key press--: char"',evt.char,'" keycode:"',evt.keycode,'" keysym:"',evt.keysym,'"')
+        self._KeyPressBuffer.(evt.keysym)
+        #{char:字符,IME:输入法状态,downkeysym:已按下的按键名称,scancode:按键id,sym:按键名称,rawchar:ctrl等组合键的值}
+        #是否为输入法启用状态
+        #IME开始,IMEState=1
+        #keycode == 229且keysym=='??' 或 char无值且keysym长度为1
+        rawchar = ''
+        char , keycode , keysym = evt.char or '' , evt.keycode , evt.keysym
+        kevt = {}
+        if (evt.keycode == 229 and evt.keysym=='??') or  (not evt.char and len(evt.keysym)==1):
+            self._IMEState = 1
+            char = ''
+        #,IME输入按键,IMEState=2
+        #IMEState ==1 時,KeyRelease事件,正常事件值
+        #输入IME字符,IMEState=3
+        #char为输入内容,keycode==0,keysym=='??'
+        elif evt.keycode == 0 and evt.keysym == '??':
+            if self._KeyPressEvent['keycode'] ！＝ 299: # == 1: # and keysym == '??':
+                #启用IME时按ctrl键组合时有charcode生成
+                keycode = self._KeyPressEvent['keycode']
+                keysym = self._KeyPressEvent['keysym']
+                rawchar = char
+                char = ''
+
+            self._IMEState = 3
+        #,IME结束,IMEState=0
+        #输入IME字符后,IME字符最后上屏,KeyRelease事件
+        else:
+            #IME禁用
+            self._IMEState = -1
+            if len(evt.keysym)==1 and ord(evt.char) != ord(evt.keysym):
+                char = evt.keysym
+                rawchar = evt.char
+                
+        self._KeyPressEvent = kevt = {'char':char,
+                'IME':self._IMEState,
+                'keycode':keycode,
+                'keysym':keysym,
+                'downkeysym':' %s ' % ' '.join(list(self._KeyPressBuffer))
+                }
+        
+        if kevt['keycode'] != 229 and self._IMEState == 1:
+            return
+        
+        print(kevt)
         
     def onKey(self,evt):
         #evt.char
