@@ -26,16 +26,79 @@ LOWERCHR = ['a','z'] #ord('a'),ord('z')]
 UPERCHR = ['A','Z'] #ord('A'),ord('Z')]
 UNICODECHR = ['\u1000','\uFFFE']
 NUMBERCHR = ['0','9']
+NEWLINECHAR = '\n'
 
 
-class Editor(tk.Canvas,_WidgetBase):
+class TkEvent(object):
+    def __init__(self,data,read_only=False):
+        self.__dict__['__metadata__']=data
+        self.__dict__['_ReadOnly']=read_only
+
+    def __setitem__(self,item,value):
+        self.__dict__['__metadata__'][item]=value
+
+    def __getitem__(self,item):
+        return self.__dict__['__metadata__'][item]
+
+    def __getattr__(self,attr):
+        return self.__dict__['__metadata__'].get(attr)
+
+    def __setattr__(self,attr,value):
+        if self.isReadOnly(): #__dict__['__metadata__'].get('ReadOnly') == True:
+            return
+        self.__dict__['__metadata__'][attr]=value
+
+    def __delitem__(self,attr):
+        self.__dict__['__metadata__'].pop(attr)
+
+    def __delattr__(self,attr):
+        self.__dict__['__metadata__'].pop(attr)
+
+    def isReadOnly(self):
+        return self.__dict__.get('_ReadOnly',False)
+
+    def setReadOnly(self,read_only):
+        self.__dict__['_ReadOnly'] = read_only
+
+    def keys(self):
+        return self.__dict__['__metadata__'].keys()
+
+    def values(self):
+        return self.__dict__['__metadata__'].values()
+
+    def items(self):
+        return self.__dict__['__metadata__'].items()
+
+    def update(self,adict):
+        if self.isReadOnly(): #__dict__['__metadata__'].get('ReadOnly') == True:
+            return
+        self.__dict__['__metadata__'].update(adict)
+
+    def clear(self):
+        self.__dict__['__metadata__'].clear()
+
+    def __repr__(self):
+        return 'TkEvent %s' % str(dict(self.__dict__['__metadata__']))
+
+class EditorBase(tk.Canvas,_WidgetBase):
     def __init__(self,parent,*args,**kwargs):
-        super(Editor,self).__init__(parent, *args, **kwargs)
+        '''
+        按键事件定义
+        {char:字符,IME:启用输入法,IMEStr:输入法输入字符串,downkeysym:已按下的按键名称,keycode:按键id}
+        IMESatae:-1未启用,0英文状态,1/2正在输入,3输入内容提交
+            -1 --> 1 --> 2 --> 3 --> 0
+            -1 --> 1 --> 3 --> 0 
+        
+        '''
+        
+        super(EditorBase,self).__init__(parent, *args, **kwargs)
+        #_WidgetBase.__init__(self)
         #tk.Canvas.__init__(self,parent, *args, **kwargs)
         self._ItemBuffer = []
         self._IMEState = 0
         self._KeyPressBuffer = set() #[()]
         self._KeyPressEvent = {}
+        self._KeyPressRawCode = {}
         self._KeyReleaseBuffer = []
         self._KeyReleaseEvent = {}
         #
@@ -46,191 +109,105 @@ class Editor(tk.Canvas,_WidgetBase):
         self._DefaultFont = myFont=font.Font(family="msyh", size=14)
         self._CharWidth,self._LineHeight = self._DefaultFont.measure(' '),self._DefaultFont.metrics("linespace")
 
-        print('char width,height',self._CharWidth,self._LineHeight)
+        #print('char width,height',self._CharWidth,self._LineHeight)
 
-        txt = self.create_text(0,0,text='', anchor=NW, font=myFont)
-        self.focus(txt)
-        self.icursor(txt, 0)
+        self._Cursor= self.create_text(0,0,text='', anchor=NW, font=myFont)
+        self.focus(self._Cursor)
+        self.icursor(self._Cursor, 0)
 
         self.bind('<Key>',self.onKey)
         self.bind('<KeyPress>',self._onKeyPress)
         self.bind('<KeyRelease>',self._onKeyRelease)
-        '''
-        按键事件定义
-        {char:字符,IME:启用输入法,IMEStr:输入法输入字符串,downkeysym:已按下的按键名称,keycode:按键id,
-
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char" k " keycode:" 75 " keysym:" k "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char" m " keycode:" 77 " keysym:" m "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                --key press--: char" 员 " keycode:" 0 " keysym:" ?? "
-                **key release**: char" 员 " keycode:" 0 " keysym:" ?? "
-                **key release**: char"   " keycode:" 32 " keysym:" space "              
-        '''
 
     def _onKeyRelease(self,evt):
-        '''
-        按键对应
-        英文状态
-            keypress和keyrelease的keysym是对应的
-            按下control键后char不对应
-            --key press--: char"  " keycode:" 17 " keysym:" Control_L "
-            --key press--: char"  " keycode:" 75 " keysym:" k "
-            **key release**: char"  " keycode:" 75 " keysym:" k "
-            --key press--: char"  " keycode:" 75 " keysym:" k "
-            **key release**: char"  " keycode:" 75 " keysym:" k "
-            **key release**: char"  " keycode:" 17 " keysym:" Control_L "            
-        输入法开启情况下
-            中文状态
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char" l " keycode:" 76 " keysym:" l "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                --key press--: char" 国 " keycode:" 0 " keysym:" ?? "
-                **key release**: char" 国 " keycode:" 0 " keysym:" ?? "
-                **key release**: char"   " keycode:" 32 " keysym:" space "
 
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char" k " keycode:" 75 " keysym:" k "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char" m " keycode:" 77 " keysym:" m "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                --key press--: char" 员 " keycode:" 0 " keysym:" ?? "
-                **key release**: char" 员 " keycode:" 0 " keysym:" ?? "
-                **key release**: char"   " keycode:" 32 " keysym:" space "
-
-                输入过程中字母上屏
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char" a " keycode:" 65 " keysym:" a "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char" b " keycode:" 66 " keysym:" b "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char" c " keycode:" 67 " keysym:" c "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                --key press--: char" a " keycode:" 0 " keysym:" ?? "
-                **key release**: char" a " keycode:" 0 " keysym:" ?? "
-                --key press--: char" b " keycode:" 0 " keysym:" ?? "
-                **key release**: char" b " keycode:" 0 " keysym:" ?? "
-                --key press--: char" c " keycode:" 0 " keysym:" ?? "
-                **key release**: char" c " keycode:" 0 " keysym:" ?? "
-                 " keycode:" 13 " keysym:" Return "
- 
-                输入过程中按ctrl
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char" l " keycode:" 76 " keysym:" l "
-                --key press--: char"  " keycode:" 17 " keysym:" Control_L "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char"  " keycode:" 77 " keysym:" m "
-                **key release**: char"  " keycode:" 17 " keysym:" Control_L "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                --key press--: char" 国 " keycode:" 0 " keysym:" ?? "
-                **key release**: char" 国 " keycode:" 0 " keysym:" ?? "
-                **key release**: char"   " keycode:" 32 " keysym:" space "
-
-                --key press--: char"  " keycode:" 17 " keysym:" Control_L "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char"  " keycode:" 77 " keysym:" m "
-                --key press--: char"  " keycode:" 76 " keysym:" l "
-                --key press--: char"  " keycode:" 0 " keysym:" ?? "
-                **key release**: char"  " keycode:" 0 " keysym:" ?? "
-                **key release**: char"  " keycode:" 76 " keysym:" l "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char"  " keycode:" 77 " keysym:" m "
-                **key release**: char"  " keycode:" 17 " keysym:" Control_L "
-                 
-                连续输入
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                --key press--: char" 际 " keycode:" 0 " keysym:" ?? "
-                **key release**: char" 际 " keycode:" 0 " keysym:" ?? "
-                --key press--: char" 法 " keycode:" 0 " keysym:" ?? "
-                **key release**: char" 法 " keycode:" 0 " keysym:" ?? "
-                **key release**: char"   " keycode:" 32 " keysym:" space "
-
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char" v " keycode:" 86 " keysym:" v "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char" b " keycode:" 66 " keysym:" b "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                --key press--: char" 好 " keycode:" 0 " keysym:" ?? "
-                **key release**: char" 好 " keycode:" 0 " keysym:" ?? "
-                **key release**: char"   " keycode:" 32 " keysym:" space "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char" w " keycode:" 87 " keysym:" w "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char" a " keycode:" 65 " keysym:" a "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                **key release**: char" d " keycode:" 68 " keysym:" d "
-                --key press--: char"  " keycode:" 229 " keysym:" ?? "
-                --key press--: char" 代 " keycode:" 0 " keysym:" ?? "
-                **key release**: char" 代 " keycode:" 0 " keysym:" ?? "
-                --key press--: char" 码 " keycode:" 0 " keysym:" ?? "
-                **key release**: char" 码 " keycode:" 0 " keysym:" ?? "
-                **key release**: char" c " keycode:" 67 " keysym:" c "
-                
-                輸入數字
-                --key press--: char"  " keycode:" 51 " keysym:" 3 "
-                --key press--: char" 3 " keycode:" 0 " keysym:" ?? "
-                **key release**: char" 3 " keycode:" 0 " keysym:" ?? "
-                **key release**: char" 3 " keycode:" 51 " keysym:" 3 "
-           英文状态
-               --key press--: char"  " keycode:" 74 " keysym:" j "
-               --key press--: char" j " keycode:" 0 " keysym:" ?? "
-               **key release**: char" j " keycode:" 0 " keysym:" ?? "
-               **key release**: char" j " keycode:" 74 " keysym:" j "
-               CONTROL
---key press--: char"  " keycode:" 17 " keysym:" Control_L "
---key press--: char"  " keycode:" 229 " keysym:" ?? "
-**key release**: char"  " keycode:" 74 " keysym:" j "
---key press--: char"  " keycode:" 76 " keysym:" l "
---key press--: char"  " keycode:" 0 " keysym:" ?? "
-**key release**: char"  " keycode:" 0 " keysym:" ?? "
-**key release**: char"  " keycode:" 76 " keysym:" l "
-**key release**: char"  " keycode:" 17 " keysym:" Control_L "
-
---key press--: char"  " keycode:" 17 " keysym:" Control_L "
---key press--: char"  " keycode:" 76 " keysym:" l "
---key press--: char"  " keycode:" 0 " keysym:" ?? "
-**key release**: char"  " keycode:" 0 " keysym:" ?? "
-**key release**: char"  " keycode:" 76 " keysym:" l "
-**key release**: char"  " keycode:" 17 " keysym:" Control_L "
-
-        進入虛擬輸入狀態
-        --key press--: char"  " keycode:" 229 " keysym:" ?? "
-        退出虛擬輸入狀態
-        **key release**: char"  " keycode:" 76 " keysym:" l "
-        keycode == ord(keysym)
-        '''
-        print('**key release**: char"',evt.char,'" keycode:"',evt.keycode,'" keysym:"',evt.keysym,'"')
+        #print('********key release**: char"',evt.char,'" keycode:"',evt.keycode,'" keysym:"',evt.keysym,'"')
         
         #,IME输入按键,IMEState=2
         #IMEState ==1 時,KeyRelease事件,正常事件值
-        if self._IMEState == 1:
-            if evt.keycode == 0:
+        ## if self._IMEState == 1:
+        ##     if evt.keycode == 0:
+        ##         self._IMEState = 3
+        ##     else:
+        ##         self._IMEState = 2
+        ##     self._KeyPressBuffer.remove('??')
+        ## elif self._IMEState in (2,3):
+        ##     pass
+            
+        pkevt = self._KeyPressEvent
+        keysym = evt.keysym
+        char = evt.char
+        keycode = evt.keycode
+        rawchar = char
+        
+        kevt=dict(self._KeyPressEvent)
+        if '_L' in keysym  and keysym not in self._KeyPressBuffer:
+            keysym = keysym.replace('_L','_R')
+        '??' in self._KeyPressBuffer and self._KeyPressBuffer.remove('??')
+
+        if evt.keycode in self._KeyPressRawCode:
+            rawchar = self._KeyPressRawCode.pop(evt.keycode)
+            keysym in self._KeyPressBuffer and self._KeyPressBuffer.remove(keysym)
+            ## if (len(evt.keysym)==1 and evt.char != evt.keysym) :
+            ##     char = ''
+
+            if self._IMEState == 3:
+                self._IMEState == 0
+                char = ''
+        elif self._KeyPressEvent['IME'] !=  -1:
+            #print('keysym',keysym)
+            #print('********key release**: char"',evt.char,'" keycode:"',evt.keycode,'" keysym:"',evt.keysym,'"',self._IMEState)
+            #print('pkevt',pkevt)
+            if self._IMEState == 3:
+                keysym = pkevt['keysym']
+                
+            if keysym == 'BackSpace':
+                char = ''
+            #IME激活狀態
+            #kevt['keycode'] = 0
+            keycode = 0
+            if  evt.keycode==0:
                 self._IMEState = 3
+            elif self._IMEState == 3: #pkevt['keycode'] == 229:
+                self._IMEState = 0
+                char = ''
+                rawchar = evt.char #''
             else:
                 self._IMEState = 2
-            self._KeyPressBuffer.remove('??')
-        elif self._IMEState in (2,3):
-            pass
+                char = ''
+                rawchar = evt.char #''
             
-        kevt = self._KeyPressEvent
+        else:
+            char = ''
+            
+        downkeysym = ' %s ' % ' '.join(list(self._KeyPressBuffer))
         
-        kevt = {'char':char,
-                'IME':self._IMEState,
-                'keycode':evt.keycode,
-                'keysym':evt.keysym,
-                'downkeysym':' %s ' % ' '.join(list(self._KeyPressBuffer))
-                }
+        if (len(keysym)==1 and evt.char != keysym)  or  'Alt' in downkeysym:
+            char = ''
+            
+        kevt['IME'] = self._IMEState
+        kevt['keycode'] = keycode
+        kevt['rawchar'] = rawchar
+        kevt['char'] = char
+        kevt['keysym'] = keysym
+        kevt['downkeysym'] = downkeysym 
+        kevt['event'] = 'keyrelease'
+        kevt = TkEvent(kevt,True)
+        self.after(0,self.onKeyRelease,kevt)
 
+    def onKeyRelease(self,evt):
+        pass
+            
     def _onKeyPress(self,evt):
-        print('--key press--: char"',evt.char,'" keycode:"',evt.keycode,'" keysym:"',evt.keysym,'"')
-        self._KeyPressBuffer.(evt.keysym)
+        #print('--key press--: char"',evt.char,'" keycode:"',evt.keycode,'" keysym:"',evt.keysym,'"')
+        self._KeyPressBuffer.add(evt.keysym)
         #{char:字符,IME:输入法状态,downkeysym:已按下的按键名称,scancode:按键id,sym:按键名称,rawchar:ctrl等组合键的值}
         #是否为输入法启用状态
         #IME开始,IMEState=1
         #keycode == 229且keysym=='??' 或 char无值且keysym长度为1
-        rawchar = ''
+        
         char , keycode , keysym = evt.char or '' , evt.keycode , evt.keysym
+        rawchar = char
         kevt = {}
         if (evt.keycode == 229 and evt.keysym=='??') or  (not evt.char and len(evt.keysym)==1):
             self._IMEState = 1
@@ -240,7 +217,7 @@ class Editor(tk.Canvas,_WidgetBase):
         #输入IME字符,IMEState=3
         #char为输入内容,keycode==0,keysym=='??'
         elif evt.keycode == 0 and evt.keysym == '??':
-            if self._KeyPressEvent['keycode'] ！＝ 299: # == 1: # and keysym == '??':
+            if self._KeyPressEvent['keycode'] != 299: # == 1: # and keysym == '??':
                 #启用IME时按ctrl键组合时有charcode生成
                 keycode = self._KeyPressEvent['keycode']
                 keysym = self._KeyPressEvent['keysym']
@@ -254,24 +231,34 @@ class Editor(tk.Canvas,_WidgetBase):
             #IME禁用
             self._IMEState = -1
             if len(evt.keysym)==1 and ord(evt.char) != ord(evt.keysym):
-                char = evt.keysym
+                char = '' # evt.keysym 同时ctrl键时不显示字符
                 rawchar = evt.char
+
+        self._KeyPressRawCode[keycode] = rawchar
+        #char只是可显示的字符
                 
         self._KeyPressEvent = kevt = {'char':char,
                 'IME':self._IMEState,
                 'keycode':keycode,
+                'rawchar':rawchar,
                 'keysym':keysym,
                 'downkeysym':' %s ' % ' '.join(list(self._KeyPressBuffer))
                 }
         
         if kevt['keycode'] != 229 and self._IMEState == 1:
             return
-        
-        print(kevt)
+        kevt['event'] = 'keypress'
+        kevt = TkEvent(kevt,True)
+        #print('\tkpress evt',kevt)
+        self.after(0,self.onKeyPress,kevt)
+
+    def onKeyPress(self,evt):
+        #print('key press',evt)
+        pass
         
     def onKey(self,evt):
         #evt.char
-        print('--key--: char"',evt.char,'" keycode:"',evt.keycode,'" keysym:"',evt.keysym,'"')
+        #print('--key--: char"',evt.char,'" keycode:"',evt.keycode,'" keysym:"',evt.keysym,'"')
         #char = evt.char evt.keycode>0 
         if evt.keysym in ('BackSpace','Delete'):
             print('delete')
@@ -309,6 +296,81 @@ class Editor(tk.Canvas,_WidgetBase):
                or UNICODECHR[0] <= char <= UNICODECHR[-1] \
                or NUMBERCHR[0] <= char <= NUMBERCHR[-1]
 
+class Editor(EditorBase):
+    def __init__(self,parent,*args,**kwargs):
+        super(Editor,self).__init__(parent,*args,**kwargs)
+        self._CmdMap = {
+            'InputText':self.textInput,
+            'Up':self.cursorUp
+
+            }
+        self._KeyMap = {
+            'Control+p':'Up'
+            }
+        
+
+
+    def textInput(self,text):
+        '''
+        文字输入
+        '''
+        text = text[0]
+        if text == NEWLINECHAR:
+            self._CursorLinePos +=1
+            self._CursorCoordinat[0] = 0
+            self._CursorCoordinat[1] += 1
+            self._CursorCoordinatPixel[0] = 0
+            self._CursorCoordinatPixel[1] += self._LineHeight
+            txt = self.create_text(self._CursorCoordinatPixel[0],self._CursorCoordinatPixel[1],text=text, anchor=NW, font=self._DefaultFont)
+        elif text:
+            width,height = self._DefaultFont.measure(text),self._DefaultFont.metrics("linespace")
+            txt = self.create_text(self._CursorCoordinatPixel[0],self._CursorCoordinatPixel[1],text=text,font=self._DefaultFont,anchor='nw')
+            self._CursorCoordinatPixel[0] += width
+            self._CursorCoordinat[0] += 1
+            self._CursorLinePos += 1
+        self.coords(self._Cursor,tuple(self._CursorCoordinatPixel))
+        self._ItemBuffer.append(txt)
+
+    def cursorUp(self,evt=None):
+        '''
+        光標上移
+        '''
+        print('cursor up line pos',self._CursorLinePos)
+        print('cursor up cordinat',self._CursorCoordinat)
+        print('cursor up cordinat pixel',self._CursorCoordinatPixel)
+        
+
+    def cursorInput(self,cursor):
+        '''
+        光标控制输入
+        '''
+        pass
+
+    def inputParse(self,evt):
+        '''
+        按鍵解釋為編輯指令
+        '''
+        if evt.char:
+            char = NEWLINECHAR if evt.keysym == 'Return'  else evt.char
+            cmd=  ('InputText',char)
+        elif evt.keysym == 'Up':
+            cmd = ('Up',)
+        else:
+            cmd = ('unknow',)
+        return cmd
+    
+
+    def onKeyRelease(self,evt):
+        print(' **** onkeyrelease **** ',evt)
+        cmd = self.inputParse(evt)
+        cmdfun = self._CmdMap.get(cmd[0])
+        cmdfun and cmdfun(cmd[1:])
+        ## char = evt.char
+        ## if evt.char:
+        ##     char = NEWLINECHAR if evt.keysym == 'Return'  else evt.char
+        ##     self.textInput(char)
+        #elif evt.keysym in ('Left','Right'
+            
 
 class Example(tk.Frame):
     #
